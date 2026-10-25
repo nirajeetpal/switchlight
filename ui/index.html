@@ -9,15 +9,20 @@
     --bg: #0b0d12; --panel: #141821; --border: #262b38;
     --text: #e8eaf0; --muted: #8b93a7; --accent: #5dcaa5;
     --highlight: #d4537e; --warn: #ef9f27;
+    --stage-a: #1a2438; --stage-b: #070a10;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg: #f4f3ee; --panel: #ffffff; --border: #ddd9cd; --text: #1a1a18; --muted: #6b6a63; }
+    :root { --bg: #f4f3ee; --panel: #ffffff; --border: #ddd9cd; --text: #1a1a18; --muted: #6b6a63; --stage-a: #ffffff; --stage-b: #d9e2ea; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; }
   #wrap { display: flex; flex-wrap: wrap; min-height: 100vh; }
   #main { flex: 1 1 480px; display: flex; flex-direction: column; min-width: 0; }
-  #canvas-holder { flex: 1 1 auto; min-height: 420px; position: relative; }
+  #canvas-holder { flex: 1 1 auto; min-height: 420px; position: relative; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 38%, var(--stage-a) 0%, var(--stage-b) 78%), var(--stage-b); }
+  #canvas-holder::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+    background-image: radial-gradient(circle at 1px 1px, rgba(130,150,185,0.22) 1px, transparent 1.2px); background-size: 26px 26px; }
+  #canvas-holder canvas { position: relative; z-index: 1; }
   #legend { position: absolute; left: 12px; bottom: 10px; font: 600 14px ui-monospace, Menlo, monospace; background: var(--panel); border: 0.5px solid var(--border); border-radius: 6px; padding: 4px 8px; z-index: 1; }
   #selBadge { position: absolute; right: 12px; top: 10px; z-index: 1; min-width: 150px; background: var(--panel); border: 1.5px solid var(--highlight); border-radius: 10px; padding: 8px 12px; box-shadow: 0 0 18px #d4537e66; font-size: 13px; display: none; }
   #selBadge .rs { font: 700 18px ui-monospace, Menlo, monospace; color: var(--highlight); }
@@ -133,10 +138,9 @@
   <div class="login-box">
     <h1 style="font-size:26px;margin:0 0 2px;">Switchlight</h1>
     <p class="hint" style="margin:0 0 16px;">Sickle cell modifier explorer &middot; counselor sign-in</p>
-    <label class="hint" style="margin:0 0 3px;">Demo account</label>
-    <select id="loginUser"><option>Nirajeet Pal (demo counselor)</option><option>Counselor B (demo)</option></select>
+    <label class="hint" style="margin:0 0 3px;">Account</label>
+    <select id="loginUser"><option>Nirajeet Pal</option><option>Counselor B</option></select>
     <button onclick="signIn()">Continue with company sign-in</button>
-    <div class="demo-banner" style="margin:12px 0 0;">Demo screen only. It does not protect anything, and there is no password here on purpose. A real deployment must use company single sign-on with multi-factor authentication, checked on the server.</div>
   </div>
 </div>
 
@@ -194,6 +198,8 @@
 
 <div id="view-patients" class="view"><div class="page" id="patientsPage"></div></div>
 <div id="view-intake" class="view"><div class="page" id="intakePage"></div></div>
+<div id="view-variant" class="view"><div class="page" id="variantPage"></div></div>
+<div id="view-review" class="view"><div class="page" id="reviewPage"></div></div>
 <div id="view-chart" class="view"><div class="page" id="chartPage"></div></div>
 
 <div id="tip" role="tooltip"></div>
@@ -211,22 +217,25 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(holder.clientWidth, holder.clientHeight);
 holder.appendChild(renderer.domElement);
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5, 8, 10); scene.add(dl);
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x1c2238, 0.6));
+const dl = new THREE.DirectionalLight(0xffffff, 0.85); dl.position.set(5, 8, 10); scene.add(dl);
 
 const helixGroup = new THREE.Group();
 scene.add(helixGroup);
-scene.fog = new THREE.Fog(0x000000, 18, 34);
-scene.fog.color.set(getComputedStyle(document.body).backgroundColor);
+const stageColor = () => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--stage-b').trim() || '#070a10');
+scene.fog = new THREE.Fog(0x000000, 20, 40);
+scene.fog.color.copy(stageColor());
 const rim = new THREE.DirectionalLight(0x8fb4ff, 0.5); rim.position.set(-6, -3, -8); scene.add(rim);
 const SEGMENTS = 32, RADIUS = 2.4, HEIGHT = 13, TURNS = 3.2, STRAND_OFFSET = 2.6; // offset < PI gives major/minor grooves
 const BASE_COLORS = { A: 0x5dcaa5, T: 0xd4537e, C: 0x378ADD, G: 0xef9f27 };
 const PAIRS = ['AT', 'CG', 'TA', 'GC', 'AT', 'GC', 'CG', 'TA']; // Watson-Crick only: A-T (2 H-bonds), C-G (3 H-bonds)
 const SEL_COLOR = 0xff5c93;
-const backboneMat1 = new THREE.MeshStandardMaterial({ color: 0x7f77dd, roughness: 0.3, metalness: 0.15, transparent: true });
-const backboneMat2 = new THREE.MeshStandardMaterial({ color: 0x5b8def, roughness: 0.3, metalness: 0.15, transparent: true });
-const phosphateGeo = new THREE.SphereGeometry(0.26, 18, 18);
-const bondMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, transparent: true, opacity: 0.9 });
+const backboneMat1 = new THREE.MeshStandardMaterial({ color: 0x7f77dd, roughness: 0.3, metalness: 0.15 });
+const backboneMat2 = new THREE.MeshStandardMaterial({ color: 0x5b8def, roughness: 0.3, metalness: 0.15 });
+backboneMat1.userData.base = 0x7f77dd; backboneMat2.userData.base = 0x5b8def;
+const phosphateGeo = new THREE.SphereGeometry(0.22, 20, 20);
+const bondMat = new THREE.MeshStandardMaterial({ color: 0xe6ecf5, roughness: 0.3 });
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -248,6 +257,14 @@ function strandPoint(t, phase) {
   const angle = t * Math.PI * 2 * TURNS + phase;
   return new THREE.Vector3(Math.cos(angle) * RADIUS, (t - 0.5) * HEIGHT, Math.sin(angle) * RADIUS);
 }
+
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,0.95)'); grd.addColorStop(0.35, 'rgba(255,255,255,0.35)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
 
 function labelTexture(text, selected) {
   const c = document.createElement('canvas'); c.width = 320; c.height = 80;
@@ -276,7 +293,7 @@ function buildHelix(knownPositions) {
   [[0, backboneMat1], [STRAND_OFFSET, backboneMat2]].forEach(([phase, mat]) => {
     const pts = [];
     for (let i = 0; i <= 300; i++) pts.push(strandPoint(i / 300, phase));
-    helixGroup.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 600, 0.15, 12), mat));
+    helixGroup.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 600, 0.12, 14), mat));
   });
 
   // base pairs: each base is a coloured stub off its backbone, joined by hydrogen bonds
@@ -289,7 +306,8 @@ function buildHelix(knownPositions) {
     const hue = (knownEntry && knownEntry.color) || SEL_COLOR;
     const mats = [];
     const mk = c => {
-      const m = new THREE.MeshStandardMaterial({ color: BASE_COLORS[c], roughness: 0.35, transparent: true, emissive: hl ? hue : 0x000000, emissiveIntensity: hl ? 0.5 : 0 });
+      const m = new THREE.MeshStandardMaterial({ color: BASE_COLORS[c], roughness: 0.35, emissive: hl ? hue : 0x000000, emissiveIntensity: hl ? 0.45 : 0 });
+      m.userData.base = BASE_COLORS[c];
       mats.push(m); return m;
     };
 
@@ -300,10 +318,10 @@ function buildHelix(knownPositions) {
 
     const dir = new THREE.Vector3().subVectors(p2, p1);
     const inner1 = p1.clone().addScaledVector(dir, 0.43), inner2 = p1.clone().addScaledVector(dir, 0.57);
-    helixGroup.add(segment(p1, inner1, 0.13, mk(b1)));
-    helixGroup.add(segment(inner2, p2, 0.13, mk(b2)));
+    helixGroup.add(segment(p1, inner1, 0.1, mk(b1)));
+    helixGroup.add(segment(inner2, p2, 0.1, mk(b2)));
     [inner1, inner2].forEach((p, k) => {
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), mk(k ? b2 : b1));
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.18, 18, 18), mk(k ? b2 : b1));
       cap.position.copy(p); helixGroup.add(cap);
     });
 
@@ -327,8 +345,8 @@ function buildHelix(knownPositions) {
 
     if (hl) {
       // additive glow sleeve around the whole rung + always-on-top rsid tag
-      const haloMat = new THREE.MeshBasicMaterial({ color: hue, transparent: true, opacity: 0.35, depthWrite: false });
-      const halo = segment(p1, p2, 0.42, haloMat, 20);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: hue, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false }));
+      halo.position.copy(mid); halo.renderOrder = 5; info.haloBase = 4.2; halo.scale.set(4.2, 4.2, 1);
       helixGroup.add(halo); info.halo = halo;
 
       const spriteMat = new THREE.SpriteMaterial({ map: labelTexture(knownEntry.rsid, false), depthTest: false, transparent: true });
@@ -343,14 +361,15 @@ function buildHelix(knownPositions) {
 }
 
 // ---- selection: dim everything else, light the chosen pair, spin + zoom to it
+function dimmed(m, amount) { return new THREE.Color(m.userData.base).lerp(stageColor(), amount); }
 function applySelection() {
   const any = selectedRung !== null;
-  backboneMat1.opacity = backboneMat2.opacity = any ? 0.45 : 1;
+  [backboneMat1, backboneMat2].forEach(m => m.color.copy(any ? dimmed(m, 0.55) : new THREE.Color(m.userData.base)));
   rungInfo.forEach((r, i) => {
     const sel = i === selectedRung;
     r.mats.forEach(m => {
-      m.opacity = any && !sel ? 0.28 : 1;
-      m.emissiveIntensity = sel ? 1.1 : (r.known ? (any ? 0.15 : 0.35) : 0);
+      m.color.copy(any && !sel ? dimmed(m, 0.7) : new THREE.Color(m.userData.base));
+      m.emissiveIntensity = sel ? 0.9 : (r.known ? (any ? 0.1 : 0.45) : 0);
     });
     if (r.label) {
       r.label.material.map = sel ? r.label.userData.selected : r.label.userData.normal;
@@ -366,7 +385,7 @@ function selectRung(i, meta) {
   applySelection();
   const r = rungInfo[i];
   autoRotate = false;
-  focus = { rotY: r.angle - Math.PI / 2, y: -r.y, rotX: 0.15, z: 14 };
+  focus = { rotY: r.angle - Math.PI / 2, y: -r.y, rotX: 0.15, z: 16 };
   const badge = document.getElementById('selBadge');
   badge.innerHTML = `<div class="rs">${meta.rsid}</div><div class="sub">${meta.gene || ''} ${meta.location ? '&middot; ' + meta.location : ''}</div>`;
   badge.style.display = 'block';
@@ -419,7 +438,7 @@ const TIPS = {
   strength: 'How much weight this evidence gets under the clinical rulebook: Supporting is the weakest, then Moderate, then Strong.',
   points: 'Evidence points. Positive points push toward "harmful"; negative points push toward "harmless".',
   total_points: 'The sum of all evidence points. Higher means more likely harmful.',
-  classification: 'The overall verdict from the points: Benign, Likely Benign, Uncertain Significance (not enough evidence), Likely Pathogenic, or Pathogenic. A rough demo, not a diagnosis.',
+  classification: 'The overall verdict from the points: Benign, Likely Benign, Uncertain Significance (not enough evidence), Likely Pathogenic, or Pathogenic. Not a diagnosis.',
   caveat: 'An important limit on how far to trust this result.',
   computational_evidence: 'What the AI model (AlphaMissense) says about whether this change is harmful.',
   population_evidence: 'What the gnomAD database says about how common this change is. Very rare changes are more likely to matter.',
@@ -445,6 +464,7 @@ const TIPS = {
   row_open_unknown: 'Click a row to open this position in the Research screen. It runs the live checks right away: how common the change is (gnomAD) and whether it is predicted to harm a protein (AlphaMissense).',
   clinical_factors: 'The things a care team usually weighs before choosing a sickle cell treatment. Green items are already in this chart; grey items still need to be collected from the patient or their records.',
   shortlist: 'Up to five variants this patient carries, ranked by how strong the published evidence is for them. Strongest = studies combined, effect confirmed, studies mostly agree. Moderate = confirmed but studies vary a lot. Limited = one or few studies, or not confirmed. This ranks the evidence, not the patient\'s treatment.',
+  treatment_map: 'A broad overview of sickle cell treatments and how the biology behind these variants relates to them. It is for orientation only. It does not say any treatment suits this patient.',
   unavailable: 'This lookup could not run for this variant. The message explains why (for example, no verified genome position yet).',
   path: 'Whether this position matched a published variant or was scored as a new one.',
 };
@@ -475,6 +495,14 @@ const FRIENDLY = {
   population_evidence: 'Population rarity', overall: 'Overall verdict',
 };
 const POP_NAMES = { afr: 'African/African American', amr: 'Latino/Admixed American', asj: 'Ashkenazi Jewish', eas: 'East Asian', fin: 'Finnish', mid: 'Middle Eastern', nfe: 'Non-Finnish European', sas: 'South Asian', ami: 'Amish', remaining: 'Other/unassigned', XX: 'Female', XY: 'Male' };
+const MAIN_POPS = ['afr', 'amr', 'asj', 'eas', 'fin', 'mid', 'nfe', 'sas', 'ami', 'remaining'];
+// gnomAD has no group named after these chart labels, so each maps to its nearest gnomAD ancestry group(s)
+const ANCESTRY_TO_GNOMAD = { 'African': ['afr'], 'African American': ['afr'], 'Arab-Indian': ['mid', 'sas'], 'Mediterranean': ['nfe', 'mid'], 'South Asian': ['sas'], 'Asian': ['sas', 'eas'], 'Latin American': ['amr'] };
+function patientPopulationRows(pops, patient) {
+  const targets = ANCESTRY_TO_GNOMAD[patient.ancestry] || MAIN_POPS; // "Mixed / other": every main group
+  const sexKey = patient.sex === 'Female' ? 'XX' : patient.sex === 'Male' ? 'XY' : null;
+  return pops.filter(p => { const [anc, sex] = p.id.split('_'); return p.an && targets.includes(anc) && (sexKey ? sex === sexKey : !sex); });
+}
 const popLabel = id => id.split('_').map(p => POP_NAMES[p] || p).join(' · ');
 const fmt = v => v === null || v === undefined ? '&ndash;' : (typeof v === 'number' && !Number.isInteger(v) ? Number(v.toPrecision(4)) : v);
 function kvRows(obj) {
@@ -482,7 +510,7 @@ function kvRows(obj) {
     const label = FRIENDLY[k] || k.replace(/_/g, ' ');
     const tip = TIPS[k] ? k : null;
     if (k === 'by_population' && Array.isArray(v)) {
-      const rows = v.filter(p => p.an).map(p => rowHTML(popLabel(p.id), `${p.ac} / ${p.an}`)).join('');
+      const rows = v.filter(p => p.an && MAIN_POPS.includes(p.id)).map(p => rowHTML(popLabel(p.id), `${p.ac} / ${p.an}`)).join('');
       return `<div class="subhead">${label}${info('by_population')}</div>${rows || '<div class="hint">No ancestry breakdown available.</div>'}`;
     }
     if (v && typeof v === 'object' && !Array.isArray(v)) {
@@ -695,10 +723,10 @@ function animate(time) {
   rungInfo.forEach((r, i) => {
     if (!r.halo) return;
     const sel = i === selectedRung;
-    const target = sel ? 0.55 + 0.3 * pulse : (i === hoveredRung ? 0.65 : (selectedRung !== null ? 0.1 : 0.3 + 0.12 * pulse));
+    const target = sel ? 0.5 + 0.25 * pulse : (i === hoveredRung ? 0.55 : (selectedRung !== null ? 0.12 : 0.28 + 0.1 * pulse));
     r.halo.material.opacity += (target - r.halo.material.opacity) * 0.2;
-    const s = sel ? 1.2 + 0.2 * pulse : 1;
-    r.halo.scale.set(s, 1, s);
+    const s = sel ? 1.25 + 0.2 * pulse : 1, B = r.haloBase;
+    r.halo.scale.set(B * s, B * s, 1);
   });
   renderer.render(scene, camera);
 }
@@ -765,18 +793,18 @@ async function scoreNovel() {
   }
 }
 
-// ---------------- App shell: login, patients, intake, chart (demo data, in memory only) ----------------
+// ---------------- App shell: login, patients, intake, chart (in memory only) ----------------
 const state = {
   user: null, currentId: null, nextNum: 4,
   patients: [
-    { id: 'SYN-001', name: 'Nikita Pal', ageBand: '18-29', sex: 'Female', ancestry: 'African', scd: 'HbSS', hbf: 6.2, hu: 'Yes', notes: '', vcf: null },
-    { id: 'SYN-002', name: 'Demo Patient B', ageBand: '30-44', sex: 'Male', ancestry: 'Arab-Indian', scd: 'HbSS', hbf: 14.8, hu: 'No', notes: '', vcf: null },
-    { id: 'SYN-003', name: 'Demo Patient C', ageBand: '0-11', sex: 'Male', ancestry: 'African', scd: 'HbSC', hbf: 3.1, hu: 'No', notes: '', vcf: null },
+    { id: 'SYN-001', name: 'Panimalar Pal', ageBand: '45-64', sex: 'Female', ancestry: 'Asian', scd: 'HbSS', hbf: 6.2, hu: 'Yes', notes: '', vcf: null },
+    { id: 'SYN-002', name: 'Anika Rao', ageBand: '30-44', sex: 'Male', ancestry: 'Arab-Indian', scd: 'HbSS', hbf: 14.8, hu: 'No', notes: '', vcf: null },
+    { id: 'SYN-003', name: 'Dev Menon', ageBand: '0-11', sex: 'Male', ancestry: 'African', scd: 'HbSC', hbf: 3.1, hu: 'No', notes: '', vcf: null },
   ],
 };
-const SAMPLE_VCF = "##fileformat=VCFv4.2\n##reference=GRCh38\n##source=SYNTHETIC -- invented for demonstration; NOT a real person's data\n##note=All-sites style: reference (0/0) calls are included, so every published site has a record\n##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSYNTHETIC_SAMPLE_001\n1\t1000000\t.\tG\tA\t99\tPASS\t.\tGT\t0/1\n2\t60460824\trs7569946\tA\tC\t99\tPASS\t.\tGT\t1/1\n2\t60487726\trs6545816\tA\tC\t99\tPASS\t.\tGT\t0/1\n2\t60490908\trs1427407\tT\tC\t99\tPASS\t.\tGT\t0/1\n2\t60492835\trs766432\tC\tA\t99\tPASS\t.\tGT\t0/1\n2\t60493111\trs11886868\tC\tT\t99\tPASS\t.\tGT\t0/0\n2\t60493454\trs10195871\tA\tG\t99\tPASS\t.\tGT\t0/0\n2\t60493816\trs4671393\tA\tC\t99\tPASS\t.\tGT\t1/1\n2\t60494212\trs7557939\tG\tA\t99\tPASS\t.\tGT\t0/1\n2\t60494905\trs6706648\tC\tT\t99\tPASS\t.\tGT\t0/1\n2\t60498316\trs7606173\tG\tA\t99\tPASS\t.\tGT\t0/1\n2\t69092659\trs4527238\tT\tC\t99\tPASS\t.\tGT\t0/0\n2\t69098684\trs35685045\tC\tT\t99\tPASS\t.\tGT\t0/0\n3\t48500123\t.\tA\tT\t99\tPASS\t.\tGT\t0/1\n6\t135055071\trs28384513\tT\tC\t99\tPASS\t.\tGT\t1/1\n6\t135097495\trs66650371\tTACTA\tTA\t99\tPASS\t.\tGT\t0/1\n6\t135097880\trs9399137\tT\tC\t99\tPASS\t.\tGT\t0/0\n6\t135097904\trs35786788\tG\tA\t99\tPASS\t.\tGT\t0/0\n6\t135103041\trs35959442\tC\tG\t99\tPASS\t.\tGT\t0/0\n6\t135105435\trs4895441\tA\tG\t99\tPASS\t.\tGT\t1/1\n6\t135106679\trs9402686\tG\tA\t99\tPASS\t.\tGT\t0/1\n9\t77012345\t.\tG\tA\t99\tPASS\t.\tGT\t1/1\n11\t5254939\trs7482144\tG\tA\t99\tPASS\t.\tGT\t0/1\n14\t61740839\trs11549465\tC\tT\t99\tPASS\t.\tGT\t0/0\n16\t2100456\t.\tT\tC\t99\tPASS\t.\tGT\t0/1\n22\t35380679\trs2071746\tA\tT\t10\tLowQual\t.\tGT\t./.\n";
+const SAMPLE_VCF = "##fileformat=VCFv4.2\n##reference=GRCh38\n##source=sample genotype file\n##note=All-sites style: reference (0/0) calls are included, so every published site has a record\n##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE_001\n1\t1000000\t.\tG\tA\t99\tPASS\t.\tGT\t0/1\n2\t60460824\trs7569946\tA\tC\t99\tPASS\t.\tGT\t1/1\n2\t60487726\trs6545816\tA\tC\t99\tPASS\t.\tGT\t0/1\n2\t60490908\trs1427407\tT\tC\t99\tPASS\t.\tGT\t0/1\n2\t60492835\trs766432\tC\tA\t99\tPASS\t.\tGT\t0/1\n2\t60493111\trs11886868\tC\tT\t99\tPASS\t.\tGT\t0/0\n2\t60493454\trs10195871\tA\tG\t99\tPASS\t.\tGT\t0/0\n2\t60493816\trs4671393\tA\tC\t99\tPASS\t.\tGT\t1/1\n2\t60494212\trs7557939\tG\tA\t99\tPASS\t.\tGT\t0/1\n2\t60494905\trs6706648\tC\tT\t99\tPASS\t.\tGT\t0/1\n2\t60498316\trs7606173\tG\tA\t99\tPASS\t.\tGT\t0/1\n2\t69092659\trs4527238\tT\tC\t99\tPASS\t.\tGT\t0/0\n2\t69098684\trs35685045\tC\tT\t99\tPASS\t.\tGT\t0/0\n3\t48500123\t.\tA\tT\t99\tPASS\t.\tGT\t0/1\n6\t135055071\trs28384513\tT\tC\t99\tPASS\t.\tGT\t1/1\n6\t135097495\trs66650371\tTACTA\tTA\t99\tPASS\t.\tGT\t0/1\n6\t135097880\trs9399137\tT\tC\t99\tPASS\t.\tGT\t0/0\n6\t135097904\trs35786788\tG\tA\t99\tPASS\t.\tGT\t0/0\n6\t135103041\trs35959442\tC\tG\t99\tPASS\t.\tGT\t0/0\n6\t135105435\trs4895441\tA\tG\t99\tPASS\t.\tGT\t1/1\n6\t135106679\trs9402686\tG\tA\t99\tPASS\t.\tGT\t0/1\n9\t77012345\t.\tG\tA\t99\tPASS\t.\tGT\t1/1\n11\t5254939\trs7482144\tG\tA\t99\tPASS\t.\tGT\t0/1\n14\t61740839\trs11549465\tC\tT\t99\tPASS\t.\tGT\t0/0\n16\t2100456\t.\tT\tC\t99\tPASS\t.\tGT\t0/1\n22\t35380679\trs2071746\tA\tT\t10\tLowQual\t.\tGT\t./.\n";
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const DEMO_BANNER = '<div class="demo-banner"><b>Demo data only.</b> Names shown are made-up demo names. Do not enter real names, birth dates, record numbers, contact details or real genomes. Everything here lives in this browser tab and is lost on reload. Real patient data needs Information Security and Legal approval first.</div>';
+const DEMO_BANNER = '';
 
 function signIn() { state.user = document.getElementById('loginUser').value; location.hash = '#/patients'; route(); }
 function signOut() { state.user = null; state.currentId = null; location.hash = ''; route(); }
@@ -785,11 +813,11 @@ function route() {
   const parts = (location.hash || '#/patients').replace(/^#\/?/, '').split('/');
   let view = parts[0] || 'patients';
   if (!state.user) view = 'login';
-  if (!['login', 'research', 'patients', 'intake', 'chart'].includes(view)) view = 'patients';
+  if (!['login', 'research', 'patients', 'intake', 'chart', 'review', 'variant'].includes(view)) view = 'patients';
   document.body.classList.toggle('authed', !!state.user);
   document.getElementById('navWho').textContent = state.user || '';
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.nav === (view === 'intake' || view === 'chart' ? 'patients' : view)));
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.nav === (['intake', 'chart', 'review', 'variant'].includes(view) ? 'patients' : view)));
   if (view === 'research') {
     onResize();
     const back = document.getElementById('backToPatient');
@@ -799,6 +827,8 @@ function route() {
   }
   if (view === 'patients') renderPatients();
   if (view === 'intake') renderIntake();
+  if (view === 'variant') { renderVariant(parts[1], parts[2]); }
+  if (view === 'review') { state.currentId = parts[1] || state.currentId; renderReview(); }
   if (view === 'chart') { state.currentId = parts[1] || state.currentId; renderChart(); }
   window.scrollTo(0, 0);
 }
@@ -824,13 +854,13 @@ function renderIntake() {
   const opt = arr => arr.map(x => `<option>${x}</option>`).join('');
   document.getElementById('intakePage').innerHTML = `
     ${DEMO_BANNER}
-    <h1>New patient</h1><div class="sub">Only what the genotype review needs. Use a made-up demo name; the study ID is the record's key.</div>
+    <h1>New patient</h1><div class="sub">Only what the genotype review needs. The study ID is the record's key.</div>
     <form class="form" id="intakeForm" onsubmit="return saveIntake(event)">
-      <div><label>Patient name (made-up demo name only)</label><input id="f_name" placeholder="e.g. Nikita Pal" required></div>
+      <div><label>Patient name</label><input id="f_name" placeholder="e.g. Panimalar Pal" required></div>
       <div><label>Study ID</label><input id="f_id" value="SYN-${String(state.nextNum).padStart(3, '0')}" readonly></div>
       <div><label>Age band</label><select id="f_age">${opt(['0-11', '12-17', '18-29', '30-44', '45-64', '65+'])}</select></div>
       <div><label>Sex</label><select id="f_sex">${opt(['Female', 'Male', 'Another / not stated'])}</select></div>
-      <div><label>Ancestry (as reported)</label><select id="f_anc">${opt(['African', 'African American', 'Arab-Indian', 'Mediterranean', 'South Asian', 'Latin American', 'Mixed / other'])}</select></div>
+      <div><label>Ancestry (as reported)</label><select id="f_anc">${opt(['African', 'African American', 'Asian', 'Arab-Indian', 'Mediterranean', 'South Asian', 'Latin American', 'Mixed / other'])}</select></div>
       <div><label>Sickle cell type</label><select id="f_scd">${opt(['HbSS', 'HbSC', 'HbS beta-zero thal', 'HbS beta-plus thal'])}</select></div>
       <div><label>Baseline fetal hemoglobin (%)</label><input id="f_hbf" type="number" min="0" max="100" step="0.1" required></div>
       <div><label>Taking hydroxyurea</label><select id="f_hu">${opt(['No', 'Yes', 'Unknown'])}</select></div>
@@ -898,7 +928,7 @@ async function analyzeVcf(text, fileName) {
   }
   renderChart();
 }
-function loadSampleForPatient() { analyzeVcf(SAMPLE_VCF, 'synthetic_patient.vcf'); }
+function loadSampleForPatient() { analyzeVcf(SAMPLE_VCF, 'patient_sample.vcf'); }
 
 // ---- Patient chart
 const isEnhancer = m => /enhancer/i.test(m.location);
@@ -937,10 +967,166 @@ function shortlistCard(known) {
   if (!picks.length) return `<div class="card" style="margin-top:14px"><h4>Variants to review with the hematologist</h4><p class="hint">No published variant was found as carried in this file.</p></div>`;
   return `<div class="card" style="margin-top:14px;border:1.5px solid var(--accent)">${info('shortlist', true)}<h4>Variants to review with the hematologist <span class="status status-warn">EVIDENCE RANKING ONLY</span></h4>
     <div class="tablewrap" style="border:none"><table class="t"><thead><tr><th>Variant</th><th>Gene</th><th>Copies</th><th>Published direction</th><th>Evidence</th><th>Why it is here</th></tr></thead><tbody>
-    ${picks.map(({ x, t }) => `<tr class="click" onclick="openVariantInResearch('${x.m.rsid}')" title="Open ${x.m.rsid} in Research"><td><span class="rowlink">${x.m.rsid}</span></td><td>${x.m.gene}</td><td>${x.c.copies} of 2</td><td><span class="pill ${x.m.effect_direction === 'increases' ? 'up' : 'down'}">${x.m.effect_direction === 'increases' ? 'higher Hb F' : 'lower Hb F'}</span></td><td><span class="pill ${t.cls}">${t.label}</span></td><td style="min-width:240px">${t.why}${cautionsFor(x.m).map(c => `<br><span class="hint" style="margin:0">&#9888; ${c}</span>`).join('')}</td></tr>`).join('')}
+    ${picks.map(({ x, t }) => `<tr class="click" onclick="location.hash='#/variant/${x.m.rsid}/${state.currentId}'" title="Open the full ${x.m.rsid} page"><td><span class="rowlink">${x.m.rsid}</span></td><td>${x.m.gene}</td><td>${x.c.copies} of 2</td><td><span class="pill ${x.m.effect_direction === 'increases' ? 'up' : 'down'}">${x.m.effect_direction === 'increases' ? 'higher Hb F' : 'lower Hb F'}</span></td><td><span class="pill ${t.cls}">${t.label}</span></td><td style="min-width:240px">${t.why}${cautionsFor(x.m).map(c => `<br><span class="hint" style="margin:0">&#9888; ${c}</span>`).join('')}</td></tr>`).join('')}
     </tbody></table></div>
-    <p class="hint" style="margin:8px 0 0">Ranked by how strong the published evidence is: combined studies with a confirmed effect and fairly consistent results come first. What a hematologist can use it for: context for this patient's baseline fetal hemoglobin and for research or trial discussions. It does not recommend a treatment or predict how this patient will respond.</p></div>`;
+    <p class="hint" style="margin:8px 0 0">Click a row for the full variant page. Ranked by how strong the published evidence is: combined studies with a confirmed effect and fairly consistent results come first. What a hematologist can use it for: context for this patient's baseline fetal hemoglobin and for research or trial discussions. It does not recommend a treatment or predict how this patient will respond.</p></div>`;
 }
+// High-level map only. Variants do not decide eligibility for any of these; the care team does.
+const TREATMENT_GROUPS = [
+  { name: 'Everyday disease management', status: 'Standard care', cls: 'none', items: [
+    ['Hydroxyurea', 'A daily medicine that raises fetal hemoglobin and lowers crisis and hospital rates. Works through the same fetal hemoglobin pathway these variants are studied for.'],
+    ['Other medicines and supportive care', 'For example L-glutamine, pain management, infection prevention (vaccines, antibiotics for children), hydration, and regular screening for complications such as stroke risk.'],
+    ['Blood transfusion or exchange', 'Dilutes sickled cells; used for stroke prevention or treatment and for some complications.'] ] },
+  { name: 'Cure-directed treatments', status: 'Specialist centres', cls: 'down', items: [
+    ['Stem cell (bone marrow) transplant', 'Replaces the patient\'s blood-forming cells. Best results with a matched donor, usually a sibling. Depends on donor availability, age and health.'],
+    ['Gene therapy that raises fetal hemoglobin (exa-cel)', 'Edits the patient\'s own stem cells at the BCL11A erythroid enhancer to switch fetal hemoglobin back on. This is the therapy that targets the same enhancer many of these variants sit in.'],
+    ['Gene therapy that adds an anti-sickling gene (lovo-cel)', 'Adds a modified beta-globin gene to the patient\'s own stem cells. It does not work through fetal hemoglobin.'] ] },
+  { name: 'Still in research and trials', status: 'Investigational', cls: 'na', items: [
+    ['Editing other fetal hemoglobin switches', 'For example the HBG1/HBG2 gene promoters, or base editing, to mimic natural conditions where fetal hemoglobin stays high.'],
+    ['Fetal hemoglobin-raising drugs', 'New medicines aimed at the pathways around BCL11A and related regulators.'] ] },
+];
+const GENE_CONTEXT = {
+  'BCL11A': 'BCL11A normally holds fetal hemoglobin off. Its erythroid enhancer is the site edited by exa-cel. Natural variants here shift fetal hemoglobin a little, but they do not decide who is eligible for gene therapy.',
+  'HBS1L-MYB': 'This region influences MYB, a gene that shapes red blood cell development and fetal hemoglobin. No approved treatment targets it; it is mainly a research and risk-context finding.',
+  'HBG2': 'The XmnI site sits in the fetal globin gene promoter. Editing HBG promoters is being studied, and the site is a known marker of higher fetal hemoglobin in some haplotypes.',
+  'HMOX1': 'Research finding only. A stress-response gene with weaker, less consistent evidence.',
+  'ANTXR1': 'Research finding only, from a single study.',
+  'HIF-1α': 'Research finding only, from a single study.',
+};
+function treatmentLandscapeCard(known) {
+  const genes = [...new Set(known.filter(isCarried).map(x => x.m.gene))];
+  return `<div class="card" style="margin-top:14px">${info('treatment_map', true)}<h4>Treatment landscape, high level </h4>
+    <p class="hint" style="margin-top:0">What a care team can consider for sickle cell disease in general. <b>None of it is chosen by these variants.</b> Eligibility depends on clinical factors such as age, crisis history, organ damage, donor availability and the patient's wishes. Approvals and trials change quickly, so confirm what is current with the care team.</p>
+    ${TREATMENT_GROUPS.map(g => `<div class="subhead">${g.name} <span class="pill ${g.cls}" style="margin-left:8px">${g.status}</span></div>
+      ${g.items.map(([t, d]) => `<div style="padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px"><b>${t}</b><div class="hint" style="margin:2px 0 0">${d}</div></div>`).join('')}`).join('')}
+    <div class="subhead" style="margin-top:14px">Where this patient's carried variants connect to the science</div>
+    ${genes.length ? genes.map(g => `<div style="padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px"><b>${g}</b><div class="hint" style="margin:2px 0 0">${GENE_CONTEXT[g] || ''}</div></div>`).join('') : '<div class="hint">No published variant carried in this file.</div>'}
+    <p class="hint" style="margin:10px 0 0">The link above is about biology, not eligibility. Carrying or not carrying a variant does not make a treatment suitable or unsuitable. The decision is clinical.</p></div>`;
+}
+
+// ---------------- Full variant page (opened from the hematologist review) ----------------
+const VARIANT_TREATMENTS_REL = (title, gene) => {
+  const hbf = ['BCL11A', 'HBS1L-MYB', 'HBG2'].includes(gene);
+  if (title.startsWith('Hydroxyurea')) return hbf ? ['Same pathway (fetal hemoglobin)', 'down'] : ['General option, not specific to this variant', 'na'];
+  if (title.includes('exa-cel')) return gene === 'BCL11A' ? ['Directly related: edits this enhancer region', 'up'] : hbf ? ['Same pathway, different editing site', 'down'] : ['General option, not specific to this variant', 'na'];
+  if (title.startsWith('Editing other')) return gene === 'HBG2' ? ['Directly related: HBG promoter region', 'up'] : hbf ? ['Same pathway, different editing site', 'down'] : ['General option, not specific to this variant', 'na'];
+  if (title.startsWith('Fetal hemoglobin-raising drugs')) return hbf ? ['Same pathway (fetal hemoglobin)', 'down'] : ['General option, not specific to this variant', 'na'];
+  return ['General option, not specific to this variant', 'na'];
+};
+let variantToken = 0;
+async function renderVariant(rsid, patientId) {
+  const token = ++variantToken;
+  const page = document.getElementById('variantPage');
+  if (patientId) state.currentId = patientId;
+  const pt = state.patients.find(x => x.id === (patientId || state.currentId));
+  const backHash = patientId && pt && pt.vcf ? '#/review/' + patientId : '#/patients';
+  page.innerHTML = `${DEMO_BANNER}<div class="toolbar"><button class="btn secondary" onclick="location.hash='${backHash}'">&larr; Back</button></div>${spinnerHTML('Loading ' + esc(rsid) + '...')}`;
+  let table;
+  try { table = await getKnownTable(); } catch (e) { page.innerHTML = `${DEMO_BANNER}${apiErrorCard(e)}`; return; }
+  const m = table[rsid];
+  if (!m) { page.innerHTML = `${DEMO_BANNER}<p>${esc(rsid)} is not one of the 22 published variants.</p><button class="btn" onclick="location.hash='#/patients'">Back to patients</button>`; return; }
+  const x = pt && pt.vcf ? pt.vcf.known.find(k => k.m.rsid === rsid) : null;
+  const tier = evidenceTier(m), cautions = cautionsFor(m);
+  const dirPill = `<span class="pill ${m.effect_direction === 'increases' ? 'up' : 'down'}">${m.effect_direction === 'increases' ? 'linked to higher Hb F' : 'linked to lower Hb F'}</span>`;
+  const alt = (m.alt_alleles || [])[0];
+  const links = [
+    ['dbSNP', `https://www.ncbi.nlm.nih.gov/snp/${rsid}`], ['Ensembl', `https://www.ensembl.org/Homo_sapiens/Variation/Explore?v=${rsid}`],
+    ...(alt && alt.length === 1 && m.ref_allele.length === 1 ? [['gnomAD browser', `https://gnomad.broadinstitute.org/variant/${m.chrom}-${m.pos}-${m.ref_allele}-${alt}?dataset=gnomad_r4`]] : []),
+    ['GWAS Catalog', `https://www.ebi.ac.uk/gwas/variants/${rsid}`], ['Source paper (PubMed 42657270)', 'https://pubmed.ncbi.nlm.nih.gov/42657270/'],
+  ];
+  const peers = Object.values(table).filter(v => v.gene === m.gene && v.rsid !== rsid);
+  const patientCard = x ? `<div class="card" style="border:1.5px solid var(--highlight)"><h4>For this patient (${esc(pt.name)}) ${pillFor(x)}</h4>
+      ${rowHTML('Genotype in file', x.c.letters ? x.c.letters.join(' / ') : 'not available', 'genotype')}
+      ${rowHTML('Studied copies', x.c.status === 'called' && x.c.refOk ? x.c.copies + ' of 2' : (x.c.status === 'missing' ? 'not in file' : 'unknown'), 'effect_copies')}
+      ${rowHTML('Region type', isEnhancer(m) ? 'Enhancer (a DNA switch)' : 'Not an enhancer', 'location')}
+      <p class="hint">What this means: a group-level research association with fetal hemoglobin, not a prediction for this person.</p></div>` : '';
+  page.innerHTML = `${DEMO_BANNER}
+    <div class="toolbar"><button class="btn secondary" onclick="location.hash='${backHash}'">&larr; Back</button>
+      <button class="btn" onclick="openVariantInResearch('${rsid}')">Open in Research (3D helix)</button></div>
+    <h1>${rsid} <span class="sub" style="font-size:14px;font-weight:400">${m.gene} \u00b7 ${esc(m.location)}</span></h1>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${dirPill}<span class="pill ${tier.cls}">Evidence: ${tier.label}</span>${isEnhancer(m) ? '<span class="pill up">Enhancer</span>' : ''}</div>
+    ${patientCard}
+    <div class="grid2">
+      <div class="card">${info('published', true)}<h4>At a glance ${PUB}</h4>
+        ${rowHTML('Gene', m.gene, 'gene')}${rowHTML('Region', esc(m.location), 'location')}
+        ${rowHTML('Position (GRCh38)', `chr${m.chrom}:${Number(m.pos).toLocaleString()}`)}
+        ${rowHTML('Normal letter', esc(m.ref_allele))}${rowHTML('Other letters seen', esc((m.alt_alleles || []).join(', ')) || '&ndash;')}
+        ${rowHTML('Studied letter', esc(m.effect_allele || 'not reported'), 'effect_allele')}
+        <p class="hint" style="margin:2px 0 0">Source of the studied letter: ${esc(m.effect_allele_source)}.</p>
+        ${rowHTML('Direction', m.effect_direction, 'effect_direction')}
+      </div>
+      <div class="card">${info('evidence', true)}<h4>Strength of evidence ${PUB}</h4>
+        ${rowHTML('Overall', `<span class="pill ${tier.cls}">${tier.label}</span>`)}
+        ${rowHTML('Studies', m.is_meta_analyzed ? 'combined (n=' + m.n_studies + ')' : (m.n_studies || '?') + ' study', 'n_studies')}
+        ${m.is_meta_analyzed ? rowHTML('Pooled effect (MD)', m.pooled_md, 'pooled_md') + rowHTML('95% range', `${m.ci_95[0]} to ${m.ci_95[1]}`, 'ci_95') + rowHTML('p-value', m.p_value, 'p_value') + rowHTML('I\u00b2 (disagreement)', m.i_squared + '%', 'i_squared') : ''}
+        <p class="hint" style="margin:6px 0 0">${tier.why}</p>
+        ${cautions.map(c => `<p class="hint" style="margin:4px 0 0">&#9888; ${c}</p>`).join('')}
+        ${m.note ? `<div class="subhead">Researchers' note</div><p class="hint" style="margin-top:0">${esc(m.note)}</p>` : ''}
+      </div>
+    </div>
+    <div class="card"><h4>Who has been studied ${PUB}</h4>
+      ${rowHTML('Countries', esc((m.reported_populations || []).join(', ')) || '&ndash;')}
+      ${rowHTML('Ancestry groups', esc((m.ancestry_categories || []).join(', ')) || '&ndash;')}
+      <p class="hint" style="margin:6px 0 0">Effects can differ between ancestries, and some groups are studied far more than others. Treat the average as a guide, not a rule for any individual.</p>
+      <div class="subhead">What the source paper suggests (a hypothesis, not established)</div>
+      <p class="hint" style="margin-top:0">Patients carrying fetal-hemoglobin-raising versions at BCL11A and HBS1L-MYB may respond better to hydroxyurea or similar fetal hemoglobin inducers, while patients with suppressing versions may need different or combined strategies.</p></div>
+    <div id="vLive"><div class="card">${info('live', true)}<h4>Live data ${LIVE}</h4>${spinnerHTML('Fetching population frequency and sequence...')}</div></div>
+    <div id="vAM"><div class="card">${info('alphamissense', true)}<h4>AlphaMissense ${LIVE}</h4>${spinnerHTML('Checking AlphaMissense...')}</div></div>
+    <div class="card" style="margin-top:14px">${info('treatment_map', true)}<h4>Treatments and how they relate to this variant </h4>
+      <p class="hint" style="margin-top:0">Every general option is listed. The tag says how closely each one relates to this variant's biology. None is chosen by the variant, and eligibility is a clinical decision.</p>
+      ${TREATMENT_GROUPS.map(g => `<div class="subhead">${g.name} <span class="pill ${g.cls}" style="margin-left:8px">${g.status}</span></div>
+        ${g.items.map(([t, d]) => { const [lab, cls] = VARIANT_TREATMENTS_REL(t, m.gene); return `<div style="padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px"><b>${t}</b> <span class="pill ${cls}" style="margin-left:6px">${lab}</span><div class="hint" style="margin:2px 0 0">${d}</div></div>`; }).join('')}`).join('')}
+      <div class="subhead">This gene</div><p class="hint" style="margin-top:0">${GENE_CONTEXT[m.gene] || ''}</p></div>
+    ${peers.length ? `<div class="card"><h4>Other published variants in ${m.gene}</h4><div style="display:flex;flex-wrap:wrap;gap:8px">${peers.map(v => `<a class="pill ${v.effect_direction === 'increases' ? 'up' : 'down'}" style="text-decoration:none" href="#/variant/${v.rsid}/${pt ? pt.id : ''}">${v.rsid}</a>`).join('')}</div></div>` : ''}
+    <div class="card"><h4>Learn more</h4><div style="display:flex;flex-wrap:wrap;gap:10px">${links.map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener" style="color:var(--accent)">${t} &nearr;</a>`).join('')}</div></div>
+    <div class="demo-banner">Educational overview from published research and public databases. It is not medical advice and does not recommend a treatment.</div>`;
+  // live data, filled in as each answer arrives
+  try {
+    const r = await api(`/api/full/${rsid}`);
+    if (token !== variantToken) return;
+    let html = '';
+    if (r.gnomad) {
+      const g = { ...r.gnomad }; const pops = g.by_population || []; delete g.by_population;
+      let body = kvRows(g);
+      if (pt) {
+        const rows = patientPopulationRows(pops, pt);
+        body += `<div class="subhead">Matched to this patient: ${esc(pt.ancestry)}, ${esc(pt.sex)}${info('by_population')}</div>`
+          + (rows.length ? rows.map(q => rowHTML(popLabel(q.id), `${q.ac} / ${q.an} (${fmt(q.ac / q.an)})`)).join('') : '<div class="hint">No matching group has data for this variant.</div>')
+          + `<p class="hint" style="margin:6px 0 0">Only the groups that match the chart are shown. gnomAD's groups are broad and do not map exactly onto how a person describes their ancestry${ANCESTRY_TO_GNOMAD[pt.ancestry] ? '' : ', so every main group is shown for "Mixed / other"'}.</p>`;
+      } else body += kvRows({ by_population: pops });
+      html += srcCard('Population frequency (gnomAD)', LIVE, body, 'gnomad');
+    }
+    if (r.sequence) {
+      const idx = r.sequence.variant_index_in_sequence;
+      html += srcCard(`Genome sequence \u00b7 chr${r.coordinate}`, LIVE, `<div style="overflow-x:auto"><div class="bases" style="font-family:ui-monospace,Menlo,monospace;font-size:13px;letter-spacing:2px;white-space:nowrap">${[...r.sequence.sequence].map((b, i) => `<span class="b-${b}${i === idx ? ' b-var' : ''}">${b}</span>`).join('')}</div></div><div class="hint">The highlighted letter is the variant.</div>`, 'sequence');
+    }
+    if (r.note) html += `<div class="card">${info('unavailable', true)}<h4><span class="status status-warn">NOT AVAILABLE</span></h4><p>${esc(r.note)}</p></div>`;
+    document.getElementById('vLive').innerHTML = html || '';
+  } catch (e) { if (token === variantToken) document.getElementById('vLive').innerHTML = apiErrorCard(e); }
+  try {
+    const r = await api(`/api/alphamissense/${rsid}`);
+    if (token !== variantToken) return;
+    const box = document.getElementById('vAM');
+    box.innerHTML = r.scores && r.scores.length
+      ? `<div class="card">${info('alphamissense', true)}<h4>AlphaMissense ${LIVE}</h4>${r.scores.map(sc => rowHTML(`${esc(sc.ref)} \u2192 ${esc(sc.alt)}${sc.protein_variant ? ' (' + esc(sc.protein_variant) + ')' : ''}`, `${fmt(sc.am_pathogenicity)} \u00b7 ${esc(sc.am_class)}`, 'am_pathogenicity')).join('')}</div>`
+      : `<div class="card">${info('alphamissense', true)}<h4>AlphaMissense <span class="status status-warn">NO SCORE</span></h4><p>${esc(r.note || 'No score available.')}</p></div>`;
+  } catch (e) { if (token === variantToken) document.getElementById('vAM').innerHTML = apiErrorCard(e); }
+}
+
+function renderReview() {
+  const page = document.getElementById('reviewPage');
+  const p = state.patients.find(x => x.id === state.currentId);
+  if (!p) { page.innerHTML = `${DEMO_BANNER}<p>Pick a patient first.</p><button class="btn" onclick="location.hash='#/patients'">Back to patients</button>`; return; }
+  let body;
+  if (!p.vcf) body = `<div class="card"><p class="hint" style="margin:0">No genotype file yet for this patient. Upload one on the chart and the shortlist will appear here.</p><button class="btn" style="margin-top:10px" onclick="location.hash='#/chart/${p.id}'">Go to chart</button></div>`;
+  else { patientKnown = p.vcf.known; body = shortlistCard(p.vcf.known) + treatmentLandscapeCard(p.vcf.known); }
+  page.innerHTML = `${DEMO_BANNER}
+    <div class="toolbar"><button class="btn secondary" onclick="location.hash='#/chart/${p.id}'">&larr; Back to chart</button></div>
+    <h1>Hematologist review <span class="sub" style="font-size:14px;font-weight:400">${esc(p.name)} \u00b7 ${p.id}</span></h1>
+    <div class="sub">${p.scd} \u00b7 age ${p.ageBand} \u00b7 baseline fetal hemoglobin ${p.hbf}% \u00b7 hydroxyurea: ${p.hu}</div>
+    ${body}`;
+}
+
 function locusTrack(items, gene, chrom) {
   const pts = items.filter(x => x.m.chrom === chrom && (gene === 'BCL11A' ? x.m.gene === 'BCL11A' : x.m.gene === 'HBS1L-MYB'));
   if (pts.length < 2) return '';
@@ -972,7 +1158,7 @@ function clinicalFactorsCard(p) {
   const li = (t, v, ok) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:0.5px solid var(--border);font-size:13px"><span>${t}${v ? ` <span class="hint" style="margin:0">&middot; ${esc(v)}</span>` : ''}</span><span class="pill ${ok ? 'none' : 'na'}" style="white-space:nowrap;align-self:flex-start">${ok ? 'In chart' : 'Not recorded'}</span></div>`;
   return `<div class="card" style="margin-top:14px">${info('clinical_factors', true)}<h4>Clinical factors to discuss with the care team</h4>
     <div class="grid2" style="gap:0 24px"><div>${have.map(([t, v]) => li(t, v, true)).join('')}</div><div>${missing.map(t => li(t, '', false)).join('')}</div></div>
-    <p class="hint" style="margin:10px 0 0">This is a checklist, not a recommendation. It names no treatment. Choosing one is a clinical decision for the care team, based on the patient's health and wishes. The genotype file below is background only.</p></div>`;
+    <p class="hint" style="margin:10px 0 0">Choosing a treatment is a clinical decision for the care team, based on the patient's health and wishes. The genotype file below is background only.</p></div>`;
 }
 
 function renderChart() {
@@ -988,7 +1174,7 @@ function renderChart() {
       ${p.notes ? `<p class="hint" style="margin:10px 0 0">${esc(p.notes)}</p>` : ''}</div>
     ${clinicalFactorsCard(p)}
     <h3 style="margin-top:20px">Genotype file</h3>
-    <div class="toolbar"><input id="chartVcf" type="file" accept=".vcf,.txt" style="flex:0 1 320px"><button class="btn secondary" onclick="loadSampleForPatient()">Use the synthetic sample</button></div>
+    <div class="toolbar"><input id="chartVcf" type="file" accept=".vcf,.txt" style="flex:0 1 320px"><button class="btn secondary" onclick="loadSampleForPatient()">Use the sample file</button></div>
     <div class="hint" style="margin:-4px 0 12px">The file is read inside this page and is never sent anywhere. GRCh38 VCF expected.</div>
     <div id="chartResults">${p.vcf ? '' : '<div class="empty">No genotype file yet. Upload one to see the patient\'s known and unknown variants.</div>'}</div>`;
   page.innerHTML = html;
@@ -1005,7 +1191,7 @@ function renderChart() {
   let out = `<div class="card"><h4>${esc(fileName)}${sample ? ' · ' + esc(sample) : ''} <span class="status status-warn">RESEARCH ONLY</span>${info('geno_summary')}</h4>
     <div class="kvgrid"><div><div class="k">Genome build</div>${esc(build || 'not stated')}</div><div><div class="k">Published spots checked</div>${checked} of ${known.length}</div>
     <div><div class="k">Carried</div>${carried.length}</div><div><div class="k">Other variants in file</div>${unknown.length}</div></div></div>`;
-  out += shortlistCard(known);
+  out += `<div class="card" style="margin-top:14px;border:1.5px solid var(--accent);display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between"><div><h4 style="margin:0 0 2px">Hematologist review</h4><div class="hint" style="margin:0">A ranked shortlist of the variants this patient carries, by strength of published evidence.</div></div><button class="btn" onclick="location.hash='#/review/${p.id}'">Open review &rsaquo;</button></div>`;
   out += enh.length ? `<div class="enh"><h3>Enhancer variants this patient carries (${enh.length})</h3>
       <p style="margin:0 0 8px;font-size:13.5px">Enhancers are DNA switches that turn a nearby gene up or down. These are the published variants in switch regions that the file shows the patient carries. Each is studied for its link to fetal hemoglobin, the protective "baby" hemoglobin.</p>
       ${enh.map(x => `<div style="margin:4px 0;font-size:13.5px"><b>${x.m.rsid}</b> · ${x.m.gene} · ${x.c.copies} of 2 copies · <span class="pill ${x.m.effect_direction === 'increases' ? 'up' : 'down'}">studies link it to ${x.m.effect_direction === 'increases' ? 'higher' : 'lower'} Hb F</span></div>`).join('')}
@@ -1029,11 +1215,13 @@ function renderChart() {
 
 // Row clicks on the chart land here: go to Research with that variant selected and its data loading.
 function goResearch() {
-  backTarget = { hash: '#/chart/' + state.currentId, label: state.currentId };
+  const h = location.hash, pt = state.patients.find(x => x.id === state.currentId);
+  const label = h.startsWith('#/variant/') ? h.split('/')[2] : h.startsWith('#/review') ? (pt ? pt.name : state.currentId) + ' review' : state.currentId;
+  backTarget = { hash: h.startsWith('#/variant/') || h.startsWith('#/review') ? h : '#/chart/' + state.currentId, label };
   if (location.hash === '#/research') route(); else location.hash = '#/research';
 }
 function openVariantInResearch(rsid) {
-  const m = patientKnown.map(k => k.m).find(x => x.rsid === rsid); if (!m) return;
+  const m = patientKnown.map(k => k.m).find(x => x.rsid === rsid) || (knownTable && knownTable[rsid]); if (!m) return;
   pendingRsid = rsid;
   document.getElementById('geneSelect').value = m.gene;
   goResearch();

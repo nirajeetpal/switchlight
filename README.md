@@ -7,7 +7,7 @@ Sickle cell modifier explorer: the published fetal-hemoglobin variants, the DNA 
 This project calls real external biology databases (Ensembl, gnomAD) that
 aren't reachable from Claude's sandboxed code environment. Everything here
 has been structurally verified (imports cleanly, routes register, logic is
-tested against synthetic data) but the actual live network calls need to
+tested against sample data) but the actual live network calls need to
 run where you have real internet access.
 
 ## Setup
@@ -58,7 +58,7 @@ python variant_scorer.py     # no network needed -- pure logic, runs anywhere
   (checked against Ensembl and NCBI dbSNP). Two effect alleles are inferred rather
   than taken from the source paper; see `effect_allele_source` in `variant_scorer.py`.
 - Section C of the UI checks a VCF against the 22 variants entirely in the browser.
-  `sample_data/synthetic_patient.vcf` is invented data for demos. Do not load real
+  `sample_data/patient_sample.vcf` is the sample genotype file. Do not load real
   patient genomes until Information Security and Legal have approved the workflow.
 - The frontend (3D helix) still needs its `simulateAIScore()` placeholder
   swapped for a real `fetch()` call to this API -- see Next Steps.

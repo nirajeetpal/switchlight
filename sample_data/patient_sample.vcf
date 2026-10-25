@@ -1,9 +1,9 @@
 ##fileformat=VCFv4.2
 ##reference=GRCh38
-##source=SYNTHETIC -- invented for demonstration; NOT a real person's data
+##source=sample genotype file
 ##note=All-sites style: reference (0/0) calls are included, so every published site has a record
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SYNTHETIC_SAMPLE_001
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE_001
 1	1000000	.	G	A	99	PASS	.	GT	0/1
 2	60460824	rs7569946	A	C	99	PASS	.	GT	1/1
 2	60487726	rs6545816	A	C	99	PASS	.	GT	0/1

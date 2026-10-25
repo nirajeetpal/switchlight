@@ -46,6 +46,8 @@ class KnownModifier:
     alt_alleles: Optional[tuple] = None
     effect_is_reference: Optional[bool] = None
     effect_allele_source: str = "Shende 2026, Table 1"
+    reported_populations: Optional[tuple] = None
+    ancestry_categories: Optional[tuple] = None
 
 
 SOURCE_CITATION = "Shende et al. 2026, iScience 29(9):116997, PMID 42657270"
@@ -198,6 +200,37 @@ for _rsid, (_chrom, _pos, _ref, _alts) in GRCH38_ALLELES.items():
     # genotype check must count REF copies rather than ALT copies.
     _m.effect_allele_source = EFFECT_ALLELE_SOURCE_OVERRIDES.get(_rsid, _m.effect_allele_source)
     _m.effect_is_reference = (_m.effect_allele == _ref) if _m.effect_allele in {_ref, *_alts} else None
+
+# Populations in which each variant was reported and their standardized ancestry
+# categories, from Table 1 of the source paper (Shende et al. 2026). AFR = African,
+# AMR = admixed American, EUR = European, SAS = South Asian, MID = Middle Eastern.
+REPORTED_POPULATIONS = {
+    "rs1427407": (('Angola', 'Brazil', 'Cameroon', 'India', 'Iraq', 'Kuwait', 'Nigeria', 'Saudi Arabia', 'Tanzania', 'USA'), ('AFR', 'AMR', 'SAS', 'MID')),
+    "rs4671393": (('Angola', 'Brazil', 'France', 'Mauritania', 'Pakistan', 'Portugal', 'Saudi Arabia', 'Spain', 'Tanzania', 'Tunisia', 'USA'), ('AFR', 'AMR', 'EUR', 'SAS', 'MID')),
+    "rs11886868": (('Angola', 'Brazil', 'Egypt', 'France', 'India', 'Mauritania', 'Mexico', 'Portugal', 'Saudi Arabia', 'Tanzania', 'Tunisia', 'USA'), ('AFR', 'AMR', 'EUR', 'SAS', 'MID')),
+    "rs766432": (('Brazil', 'Saudi Arabia', 'USA'), ('AMR', 'MID', 'AFR (African American)')),
+    "rs7557939": (('Angola', 'Brazil', 'USA'), ('AFR', 'AMR')),
+    "rs7569946": (('Kuwait',), ('MID',)),
+    "rs6545816": (('Nigeria',), ('AFR',)),
+    "rs7606173": (('Cameroon', 'Kuwait', 'USA'), ('AFR', 'MID')),
+    "rs10195871": (('Kuwait',), ('MID',)),
+    "rs6706648": (('Nigeria', 'USA'), ('AFR',)),
+    "rs9399137": (('Brazil', 'Cameroon', 'France', 'India', 'Iraq', 'Kuwait', 'Nigeria', 'Saudi Arabia', 'Tanzania', 'USA', 'Jamaica'), ('AFR', 'AMR', 'EUR', 'SAS', 'MID')),
+    "rs4895441": (('Brazil', 'France', 'Morocco', 'Saudi Arabia', 'Tanzania', 'USA', 'Jamaica'), ('AFR', 'AMR', 'EUR', 'MID')),
+    "rs28384513": (('Brazil', 'France', 'Iraq', 'Morocco', 'Saudi Arabia', 'Tanzania', 'USA'), ('AFR', 'AMR', 'EUR', 'MID')),
+    "rs9402686": (('Brazil', 'Morocco', 'Nigeria', 'Saudi Arabia', 'Tanzania', 'USA', 'Jamaica'), ('AFR', 'AMR', 'MID')),
+    "rs66650371": (('Angola', 'Kuwait', 'Nigeria', 'Tanzania'), ('AFR', 'MID')),
+    "rs35786788": (('Brazil', 'Kuwait', 'Tanzania'), ('AMR', 'MID', 'AFR')),
+    "rs35959442": (('Kuwait',), ('MID',)),
+    "rs7482144": (('Angola', 'Brazil', 'Egypt', 'France', 'India', 'Iraq', 'Kuwait', 'Nigeria', 'Portugal', 'Saudi Arabia', 'Spain', 'Tanzania', 'USA', 'Morocco'), ('AFR', 'AMR', 'EUR', 'SAS', 'MID')),
+    "rs2071746": (('Brazil', 'Egypt', 'India', 'Iran'), ('AMR', 'MID', 'SAS')),
+    "rs4527238": (('Saudi Arabia',), ('MID',)),
+    "rs35685045": (('Saudi Arabia',), ('MID',)),
+    "rs11549465": (('Saudi Arabia',), ('MID',)),
+}
+for _rsid, (_pops, _anc) in REPORTED_POPULATIONS.items():
+    KNOWN_MODIFIERS[_rsid].reported_populations = _pops
+    KNOWN_MODIFIERS[_rsid].ancestry_categories = _anc
 
 
 def score_known_modifier(rsid: str) -> Optional[dict]:
