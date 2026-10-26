@@ -54,6 +54,13 @@ python variant_scorer.py     # no network needed -- pure logic, runs anywhere
   (`backend/alphamissense_lookup.py`). The earlier pysam remote-tabix route could not
   work because DeepMind's file has no published `.tbi` index. Only missense (coding)
   variants get a score; non-coding positions return "no score" by design.
+- **Switchlight-AM** (`backend/switchlight_am.py`): AlphaMissense is looked up in a local SQLite copy
+  first, then falls back to live Ensembl VEP for positions outside the indexed gene windows. Build the
+  copy once with `cd backend && python build_am_index.py` (streams DeepMind's 643 MB file and keeps the
+  windows for BCL11A, HBS1L-MYB, HBB/HBG, HMOX1, ANTXR1 and HIF1A; use `--all` for the whole genome,
+  several GB). The explanation text is written only from the retrieved rows, and is rule-based today.
+  AlphaMissense is (c) 2023 DeepMind, CC BY-NC-SA 4.0: non-commercial use with attribution
+  (Cheng et al. 2023, Science).
 - All 22 known modifiers now have GRCh38 coordinates in `CONFIRMED_COORDINATES`
   (checked against Ensembl and NCBI dbSNP). Two effect alleles are inferred rather
   than taken from the source paper; see `effect_allele_source` in `variant_scorer.py`.

@@ -16,6 +16,7 @@ from variant_scorer import (
 from gnomad_lookup import fetch_allele_frequency
 from sequence_lookup import fetch_flank
 from alphamissense_lookup import query_exact_variant, vep_alphamissense
+import switchlight_am
 
 app = FastAPI(title="Sickle Cell Variant Explorer API")
 
@@ -118,17 +119,18 @@ def get_alphamissense_for_known(rsid: str):
     if not alts:
         return {"rsid": rsid, "scores": [], "note": "This is an insertion/deletion; AlphaMissense only scores single-letter protein changes."}
     try:
-        looked = [vep_alphamissense(chrom, pos, ref, a) for a in alts]
+        res = switchlight_am.score_variants(chrom, pos, ref, alts, {"rsid": rsid, "location": known["location"]})
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"AlphaMissense lookup failed: {e}")
-    scores = [x["score"] for x in looked if x["score"]]
-    consequence = next((x["consequence"] for x in looked if x["consequence"]), None)
-    note = None if scores else (
-        f"AlphaMissense has no score for {rsid} (chr{chrom}:{pos}). It only scores changes that alter a protein. "
-        f"Ensembl classifies this variant as {consequence.replace('_', ' ') if consequence else 'non-coding'}, "
-        f"in: {known['location']}.")
-    return {"rsid": rsid, "chrom": chrom, "pos": pos, "ref": ref, "scores": scores,
-            "consequence": consequence, "note": note}
+    return {"rsid": rsid, "chrom": chrom, "pos": pos, "ref": ref, "scores": res["scores"],
+            "source": res["source"], "consequence": res["consequence"], "explanation": res["explanation"],
+            "note": None if res["scores"] else res["explanation"]}
+
+
+@app.get("/api/am/status")
+def am_status():
+    """Is the local AlphaMissense copy built, and which gene windows does it cover?"""
+    return switchlight_am.status()
 
 
 @app.get("/api/known-by-gene/{gene}")

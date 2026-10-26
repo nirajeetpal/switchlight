@@ -9,10 +9,10 @@
     --bg: #0b0d12; --panel: #141821; --border: #262b38;
     --text: #e8eaf0; --muted: #8b93a7; --accent: #5dcaa5;
     --highlight: #d4537e; --warn: #ef9f27;
-    --stage-a: #1a2438; --stage-b: #070a10;
+    --stage-a: #1a2438; --stage-b: #070a10; --lum: 68%;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg: #f4f3ee; --panel: #ffffff; --border: #ddd9cd; --text: #1a1a18; --muted: #6b6a63; --stage-a: #ffffff; --stage-b: #d9e2ea; }
+    :root { --bg: #f4f3ee; --panel: #ffffff; --border: #ddd9cd; --text: #1a1a18; --muted: #6b6a63; --stage-a: #ffffff; --stage-b: #d9e2ea; --lum: 40%; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; }
@@ -79,7 +79,9 @@
   #tip.show { opacity: 1; }
   #nav { display: none; align-items: center; gap: 18px; height: 52px; padding: 0 16px; background: var(--panel); border-bottom: 0.5px solid var(--border); position: sticky; top: 0; z-index: 20; }
   body.authed #nav { display: flex; }
-  #nav .brand { font-weight: 700; letter-spacing: 0.01em; margin-right: 8px; }
+  #nav .brand { font-weight: 800; font-size: 18px; letter-spacing: 0.01em; margin-right: 8px; }
+  /* each letter takes a different chromosome-paint hue; lightness follows the theme */
+  .wordmark span { color: hsl(var(--h) 72% var(--lum)); }
   #nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 6px 10px; border-radius: 6px; }
   #nav a.active { color: var(--text); background: var(--bg); }
   #nav .spacer { flex: 1; }
@@ -126,7 +128,7 @@
 </head>
 <body>
 <header id="nav">
-  <span class="brand">Switchlight</span>
+  <span class="brand wordmark" aria-label="Switchlight"><span style="--h:300">S</span><span style="--h:135">w</span><span style="--h:190">i</span><span style="--h:28">t</span><span style="--h:52">c</span><span style="--h:2">h</span><span style="--h:222">l</span><span style="--h:272">i</span><span style="--h:92">g</span><span style="--h:334">h</span><span style="--h:170">t</span></span>
   <a href="#/patients" data-nav="patients">Patients</a>
   <a href="#/research" data-nav="research">Research</a>
   <span class="spacer"></span>
@@ -136,7 +138,7 @@
 
 <div id="view-login" class="view">
   <div class="login-box">
-    <h1 style="font-size:26px;margin:0 0 2px;">Switchlight</h1>
+    <h1 class="wordmark" style="font-size:30px;margin:0 0 2px;" aria-label="Switchlight"><span style="--h:300">S</span><span style="--h:135">w</span><span style="--h:190">i</span><span style="--h:28">t</span><span style="--h:52">c</span><span style="--h:2">h</span><span style="--h:222">l</span><span style="--h:272">i</span><span style="--h:92">g</span><span style="--h:334">h</span><span style="--h:170">t</span></h1>
     <p class="hint" style="margin:0 0 16px;">Sickle cell modifier explorer &middot; counselor sign-in</p>
     <label class="hint" style="margin:0 0 3px;">Account</label>
     <select id="loginUser"><option>Nirajeet Pal</option><option>Counselor B</option></select>
@@ -666,14 +668,18 @@ async function loadAlphaMissense(rsid, token) {
   try {
     const r = await api(`/api/alphamissense/${rsid}`);
     if (token !== loadToken) return;
-    if (r.scores && r.scores.length) {
-      box.innerHTML = `<div class="card">${info('alphamissense', true)}<h4>AlphaMissense ${LIVE}</h4>${r.scores.map(sc => rowHTML(`${esc(sc.ref)} \u2192 ${esc(sc.alt)}${sc.protein_variant ? ' (' + esc(sc.protein_variant) + ')' : ''}`, `${fmt(sc.am_pathogenicity)} \u00b7 ${esc(sc.am_class)}`, 'am_pathogenicity')).join('')}</div>`;
-    } else {
-      box.innerHTML = `<div class="card">${info('alphamissense', true)}<h4>AlphaMissense <span class="status status-warn">NO SCORE</span></h4><p>${esc(r.note || r.detail || 'No score available.')}</p></div>`;
-    }
+    box.innerHTML = amCard(r);
   } catch (e) {
     if (token === loadToken) box.innerHTML = apiErrorCard(e);
   }
+}
+
+// Switchlight-AM card: scores plus the grounded explanation, with where the numbers came from
+function amCard(r) {
+  const src = r.source === 'local' ? '<span class="pill none">from local copy</span>' : '<span class="pill na">live from Ensembl</span>';
+  const head = r.scores && r.scores.length ? `AlphaMissense ${src}` : `AlphaMissense <span class="status status-warn">NO SCORE</span> ${src}`;
+  const rows = (r.scores || []).map(sc => rowHTML(`${esc(sc.ref)} \u2192 ${esc(sc.alt)}${sc.protein_variant ? ' (' + esc(sc.protein_variant) + ')' : ''}`, `${fmt(sc.am_pathogenicity)} \u00b7 ${esc(sc.am_class)}`, 'am_pathogenicity')).join('');
+  return `<div class="card">${info('alphamissense', true)}<h4>${head}</h4>${rows}<p class="hint" style="margin:6px 0 0">${esc(r.explanation || r.note || 'No score available.')}</p></div>`;
 }
 
 function renderKnownCard(m, target = 'knownResult') {
@@ -1107,9 +1113,7 @@ async function renderVariant(rsid, patientId) {
     const r = await api(`/api/alphamissense/${rsid}`);
     if (token !== variantToken) return;
     const box = document.getElementById('vAM');
-    box.innerHTML = r.scores && r.scores.length
-      ? `<div class="card">${info('alphamissense', true)}<h4>AlphaMissense ${LIVE}</h4>${r.scores.map(sc => rowHTML(`${esc(sc.ref)} \u2192 ${esc(sc.alt)}${sc.protein_variant ? ' (' + esc(sc.protein_variant) + ')' : ''}`, `${fmt(sc.am_pathogenicity)} \u00b7 ${esc(sc.am_class)}`, 'am_pathogenicity')).join('')}</div>`
-      : `<div class="card">${info('alphamissense', true)}<h4>AlphaMissense <span class="status status-warn">NO SCORE</span></h4><p>${esc(r.note || 'No score available.')}</p></div>`;
+    box.innerHTML = amCard(r);
   } catch (e) { if (token === variantToken) document.getElementById('vAM').innerHTML = apiErrorCard(e); }
 }
 
