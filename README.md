@@ -2,6 +2,56 @@
 
 Sickle cell modifier explorer: the published fetal-hemoglobin variants, the DNA "switches" (enhancers) that dim or brighten them, and a counselor view for reviewing a genotype file.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph TAB["Browser tab - ui/index.html"]
+    direction TB
+    SCREENS["Sign-in · Patients · Chart<br/>Review · Variant page<br/>Research (3D helix)"]
+    MEM[("Stays in this tab<br/>patient records<br/>VCF parsed in JavaScript<br/>genotype calls")]
+    SCREENS --- MEM
+  end
+
+  subgraph BACK["Backend - Python, port 8000"]
+    direction TB
+    ROUTES["app.py routes<br/>/api/full · /api/alphamissense<br/>/api/variant-at-position<br/>/api/all-known-modifiers"]
+    SCORER["variant_scorer.py<br/>22 variants and their DNA letters<br/>numbers from the paper (fixed)"]
+    AM["Switchlight-AM<br/>retrieves from a local copy<br/>of AlphaMissense scores"]
+    LOOK["lookup code<br/>DNA · frequency"]
+    RES["resilient.py<br/>1 saved copies on disk (.cache/)<br/>2 retry up to 4 times<br/>3 old copy if still down"]
+    ROUTES -->|reads| SCORER
+    ROUTES -->|calls| AM
+    ROUTES -->|calls| LOOK
+    LOOK -->|every call| RES
+  end
+
+  subgraph WEB["Outside websites - free, public"]
+    direction TB
+    ENS["Ensembl<br/>DNA letters, AI harm score"]
+    UCSC["UCSC<br/>DNA letters (backup)"]
+    GNOM["gnomAD<br/>how many people carry a change"]
+    DM["DeepMind file<br/>AlphaMissense scores"]
+  end
+
+  SCREENS <-->|"published + live lookups"| ROUTES
+  MEM -.->|"pos + alleles, on click only"| ROUTES
+  RES --> ENS
+  RES -.->|"only if Ensembl fails"| UCSC
+  RES --> GNOM
+  AM -.->|"outside the local gene windows"| ENS
+  DM -.->|"one-time download, no retry layer"| AM
+
+  style MEM fill:#3b2a10,stroke:#f0a25a,color:#fff
+  style AM fill:#0f3d38,stroke:#5ed1c0,color:#fff
+```
+
+**What leaves the browser.** Opening a published variant sends only its rs number. A clicked unknown variant also sends its position and DNA letters (dotted amber line in the picture). The uploaded genotype file never leaves the tab.
+
+**How one lookup survives a flaky website.** Every public call checks the saved copies first, retries with growing waits, then uses an older saved copy; DNA letters fall back to UCSC. Only after that does the page show an error.
+
+**Switchlight-AM.** AlphaMissense scores are read from a local SQLite copy built once from DeepMind's file (`python build_am_index.py`). Positions outside the indexed gene windows fall back to live Ensembl. The explanation text is written only from the rows it retrieved.
+
 ## Why this needs to run on YOUR machine, not in a sandbox
 
 This project calls real external biology databases (Ensembl, gnomAD) that
